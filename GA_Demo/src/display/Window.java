@@ -23,6 +23,7 @@ public class Window {
 	private Renderer r;
 	private int width, height;
 	private boolean vsync = true;
+	private boolean render = true;
 	private long counter = 10;
 
 	public Window(int width, int height) {
@@ -139,6 +140,11 @@ public class Window {
 	}
 
 	public void renderTile(float x, float y, float size, TileType tile) {
+		if(glfwGetKey(window, GLFW_KEY_R) == 1 && counter <= System.currentTimeMillis()) {
+			render = !render;
+			counter = System.currentTimeMillis()+200;
+		}
+		if(render){
 		switch (tile.name()) {
 		case "FOOD":
 			r.render((float) (x + 0.25) * width / size, (float) (y + 0.25) * height / size, width / (size * 2),
@@ -150,6 +156,7 @@ public class Window {
 			break;
 		case "EMPTY":
 		default:
+		}
 		}
 	}
 

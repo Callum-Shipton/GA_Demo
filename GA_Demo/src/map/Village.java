@@ -2,7 +2,7 @@
 package map;
 
 import display.Window;
-import entities.Entity;
+import entities.ReinforcementEntity;
 import logging.Logger;
 import logging.Logger.Category;
 
@@ -11,7 +11,7 @@ public class Village {
 	private int maxFood;
 
 	private Population population;
-	private Entity fittestEntity;
+	private ReinforcementEntity fittestEntity;
 	private float fittestGeneration = 0;
 
 	private int generation = 1;
@@ -23,7 +23,7 @@ public class Village {
 	private int foodCounter = FOOD_DELAY;
 
 	private int moveCounter = 0;
-	private static final int MOVE_DELAY = 25;
+	private static final int MOVE_DELAY = 20;
 
 	public Village(int populationSize, int mapSize, int maxFood) {
 		this.maxFood = maxFood;
@@ -55,7 +55,7 @@ public class Village {
 			if (moveCounter <= 0) {
 				time++;
 				Logger.debug("Time: " + time, Category.SYSTEM);
-				map.moveEntities();
+				map.update();
 
 				foodCounter--;
 				if (foodCounter <= 0) {
@@ -69,14 +69,14 @@ public class Village {
 			moveCounter--;
 
 		} else {
-			createNextGeneration();
+			createNextGame();
 		}
 	}
 
-	public void createNextGeneration() {
-		Entity fittestGenEntity = population.getFittest();
+	public void createNextGame() {
+		ReinforcementEntity fittestGenEntity = population.getFittest();
 		if (fittestEntity == null || (fittestGenEntity.getFitness() > fittestEntity.getFitness())) {
-			fittestEntity = new Entity(fittestGenEntity);
+			fittestEntity = fittestGenEntity;
 		}
 		float generationFitness = population.averageFitness();
 		if (generationFitness > fittestGeneration) {
@@ -91,7 +91,6 @@ public class Village {
 		Logger.info("Fittest Generation of all time: " + fittestGeneration);
 		time = 0;
 		generation++;
-		population = new Population(population);
 		map.reset();
 		createInitialFood();
 		map.spawnPopulation(population);

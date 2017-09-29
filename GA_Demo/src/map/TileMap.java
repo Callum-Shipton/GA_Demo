@@ -8,13 +8,13 @@ import java.util.Set;
 import org.joml.Vector2i;
 
 import display.Window;
-import entities.Entity;
+import entities.ReinforcementEntity;
 import logging.Logger;
 import logging.Logger.Category;
 
 public class TileMap {
 
-	private Set<Entity> livingEntities;
+	private Set<ReinforcementEntity> livingEntities;
 	private TileType[][] tiles;
 	private int size;
 
@@ -37,11 +37,12 @@ public class TileMap {
 	}
 
 	public void spawnPopulation(Population population) {
-		for (Entity entity : population.getEntities()) {
+		for (ReinforcementEntity entity : population.getEntities()) {
 			Vector2i emptyTileLoc = getEmptyTile();
 			entity.setPosition(emptyTileLoc);
 			setTile(emptyTileLoc, TileType.ENTITY);
 			livingEntities.add(entity);
+			entity.reset();
 		}
 	}
 
@@ -57,9 +58,9 @@ public class TileMap {
 		return new Vector2i(x, y);
 	}
 
-	public void moveEntities() {
-		for (Iterator<Entity> iter = livingEntities.iterator(); iter.hasNext();) {
-			Entity entity = iter.next();
+	public void update() {
+		for (Iterator<ReinforcementEntity> iter = livingEntities.iterator(); iter.hasNext();) {
+			ReinforcementEntity entity = iter.next();
 			if (!entity.isDead()) {
 				entity.update(this);
 			}
@@ -71,8 +72,8 @@ public class TileMap {
 	}
 
 	public void killEntity(Vector2i entityPosition) {
-		for (Iterator<Entity> iter = livingEntities.iterator(); iter.hasNext();) {
-			Entity entity = iter.next();
+		for (Iterator<ReinforcementEntity> iter = livingEntities.iterator(); iter.hasNext();) {
+			ReinforcementEntity entity = iter.next();
 			if (entityPosition.equals(entity.getPosition())) {
 				entity.kill();
 			}
@@ -101,7 +102,7 @@ public class TileMap {
 		return tiles;
 	}
 
-	public Set<Entity> getEntities() {
+	public Set<ReinforcementEntity> getEntities() {
 		return livingEntities;
 	}
 
