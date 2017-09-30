@@ -17,7 +17,9 @@ import org.deeplearning4j.nn.weights.WeightInit;
 import org.joml.Vector2i;
 import org.nd4j.linalg.activations.Activation;
 import org.nd4j.linalg.api.ndarray.INDArray;
+import org.nd4j.linalg.dataset.DataSet;
 import org.nd4j.linalg.factory.Nd4j;
+import org.nd4j.linalg.indexing.NDArrayIndex;
 import org.nd4j.linalg.lossfunctions.LossFunctions;
 
 import actions.Action;
@@ -31,24 +33,30 @@ public class ReinforcementEntity implements Comparable<ReinforcementEntity> {
 	private static final int INITIAL_LIFE = 15;
 	private static final int FOOD_LIFE = 5;
 	private static final int VIEW_RANGE = 5;
+	private static final int BATCH_SIZE = 2048;
+	private static final int MAX_MEMORIES = 1000000;
+	private static final int FEATURES = ((((2 * VIEW_RANGE + 1) * (2 * VIEW_RANGE + 1) - 1) * 4) + 1);
 	private Vector2i position;
 	private int fitness = 0;
 	private int life = INITIAL_LIFE;
 	private boolean dead = false;
-	private float alpha = 0.05f;
+	private float alpha = 0.04f;
 	private float discount = 0.9f;
 	private float exploration = 1;
-	private float eDecay = 0.00001f;
+	private float eDecay = 0.0001f;
 	private Random rand = new Random();
+	private INDArray states;
+	private INDArray outputs;
+	private int memories = 0;
 	MultiLayerNetwork net;
 
 	public ReinforcementEntity() {
 		MultiLayerConfiguration conf = new NeuralNetConfiguration.Builder().seed(42).iterations(1)
-				.weightInit(WeightInit.XAVIER).learningRate(alpha).optimizationAlgo(OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT)
-				.list()
+				.weightInit(WeightInit.XAVIER).learningRate(alpha)
+				.optimizationAlgo(OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT).list()
 				.layer(0,
-						new DenseLayer.Builder().nIn((((2*VIEW_RANGE + 1) * (2*VIEW_RANGE + 1) - 1) * 4) + 1).nOut(512).activation(Activation.RELU)
-								.build())
+						new DenseLayer.Builder().nIn((((2 * VIEW_RANGE + 1) * (2 * VIEW_RANGE + 1) - 1) * 4) + 1)
+								.nOut(512).activation(Activation.RELU).build())
 				.layer(1, new DenseLayer.Builder().nIn(512).nOut(128).activation(Activation.RELU).build())
 				.layer(2, new DenseLayer.Builder().nIn(128).nOut(32).activation(Activation.RELU).build())
 				.layer(3, new OutputLayer.Builder(LossFunctions.LossFunction.MSE).activation(Activation.IDENTITY)
@@ -56,18 +64,20 @@ public class ReinforcementEntity implements Comparable<ReinforcementEntity> {
 				.backprop(true).pretrain(false).build();
 		net = new MultiLayerNetwork(conf);
 		net.init();
+		states = Nd4j.create(MAX_MEMORIES, FEATURES);
+		outputs = Nd4j.create(MAX_MEMORIES, 8);
 	}
 
 	public void update(TileMap map) {
 
 		INDArray state = generateState(map);
 		int action;
-		if(rand.nextFloat()>exploration){
+		if (rand.nextFloat() > exploration) {
 			action = net.predict(state)[0];
-		}else{
+		} else {
 			action = rand.nextInt(8);
 		}
-		exploration-=eDecay;
+		exploration -= eDecay;
 
 		Vector2i movePos = new Vector2i(position.x, position.y);
 		switch (action) {
@@ -134,8 +144,11 @@ public class ReinforcementEntity implements Comparable<ReinforcementEntity> {
 	}
 
 	private void storeMemory(INDArray state, INDArray targetArr) {
-		net.fit(state, targetArr);
-
+		if (memories < MAX_MEMORIES) {
+			states.putRow(memories, state);
+			outputs.putRow(memories, targetArr);
+			memories++;
+		}
 	}
 
 	private INDArray generateState(TileMap map) {
@@ -147,7 +160,7 @@ public class ReinforcementEntity implements Comparable<ReinforcementEntity> {
 				if ((!(viewX == position.x() && viewY == position.y()))) {
 					if (map.outOfRange(viewX, viewY)) {
 						for (TileType type : TileType.values()) {
-								state.add(0.0);
+							state.add(0.0);
 						}
 					} else {
 						currentTile = map.getTile(viewX, viewY);
@@ -170,6 +183,11 @@ public class ReinforcementEntity implements Comparable<ReinforcementEntity> {
 		life = INITIAL_LIFE;
 		fitness = 0;
 		dead = false;
+		if (memories > BATCH_SIZE) {
+			DataSet memory = new DataSet(states.get(NDArrayIndex.interval(0,memories), NDArrayIndex.all()), outputs.get(NDArrayIndex.interval(0,memories), NDArrayIndex.all()));
+			DataSet m = memory.sample(BATCH_SIZE,false);
+				net.fit(m.getFeatures(), m.getLabels());
+		}
 	}
 
 	public void setPosition(Vector2i position) {
