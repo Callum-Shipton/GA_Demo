@@ -8,7 +8,7 @@ public class Main {
 
 	private static final int POPULATION_SIZE = 1;
 	private static final int MAP_SIZE = 50;
-	private static final int NUM_FOOD = 50;
+	private static final int NUM_FOOD = 80;
 
 	private Village village;
 

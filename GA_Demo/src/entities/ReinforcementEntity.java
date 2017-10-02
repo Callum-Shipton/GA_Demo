@@ -33,39 +33,41 @@ public class ReinforcementEntity implements Comparable<ReinforcementEntity> {
 	private static final int INITIAL_LIFE = 15;
 	private static final int FOOD_LIFE = 5;
 	private static final int VIEW_RANGE = 5;
-	private static final int BATCH_SIZE = 2048;
+	private static final int BATCH_SIZE = 32;
 	private static final int MAX_MEMORIES = 1000000;
 	private static final int FEATURES = ((((2 * VIEW_RANGE + 1) * (2 * VIEW_RANGE + 1) - 1) * 4) + 1);
+	private static final int SEED = 42;
+	
 	private Vector2i position;
 	private int fitness = 0;
 	private int life = INITIAL_LIFE;
 	private boolean dead = false;
 	private float alpha = 0.04f;
-	private float discount = 0.9f;
+	private float discount = 0.97f;
 	private float exploration = 1;
-	private float eDecay = 0.0001f;
-	private Random rand = new Random();
-	private INDArray states;
-	private INDArray outputs;
-	private int memories = 0;
+	private float eDecay = 0.00001f;
+	private float lives = 0;
+	
+	private Random rand;
+	private MemoryStorage memories;
 	MultiLayerNetwork net;
 
 	public ReinforcementEntity() {
-		MultiLayerConfiguration conf = new NeuralNetConfiguration.Builder().seed(42).iterations(1)
+		rand = new Random(SEED);
+		memories = new MemoryStorage(MAX_MEMORIES, rand);
+		MultiLayerConfiguration conf = new NeuralNetConfiguration.Builder().seed(SEED).iterations(1)
 				.weightInit(WeightInit.XAVIER).learningRate(alpha)
 				.optimizationAlgo(OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT).list()
 				.layer(0,
 						new DenseLayer.Builder().nIn((((2 * VIEW_RANGE + 1) * (2 * VIEW_RANGE + 1) - 1) * 4) + 1)
-								.nOut(512).activation(Activation.RELU).build())
-				.layer(1, new DenseLayer.Builder().nIn(512).nOut(128).activation(Activation.RELU).build())
-				.layer(2, new DenseLayer.Builder().nIn(128).nOut(32).activation(Activation.RELU).build())
+								.nOut(128).activation(Activation.RELU).build())
+				.layer(1, new DenseLayer.Builder().nIn(128).nOut(64).activation(Activation.RELU).build())
+				.layer(2, new DenseLayer.Builder().nIn(64).nOut(32).activation(Activation.RELU).build())
 				.layer(3, new OutputLayer.Builder(LossFunctions.LossFunction.MSE).activation(Activation.IDENTITY)
 						.nIn(32).nOut(8).build())
 				.backprop(true).pretrain(false).build();
 		net = new MultiLayerNetwork(conf);
 		net.init();
-		states = Nd4j.create(MAX_MEMORIES, FEATURES);
-		outputs = Nd4j.create(MAX_MEMORIES, 8);
 	}
 
 	public void update(TileMap map) {
@@ -126,29 +128,17 @@ public class ReinforcementEntity implements Comparable<ReinforcementEntity> {
 		life--;
 		fitness++;
 
-		float target;
+		INDArray newState = null;
 
 		if (life <= 0) {
 			dead = true;
 			Logger.debug(this + " Died", Category.ENTITIES);
-			target = reward;
 		} else {
-			INDArray newState = generateState(map);
-			int newAction = net.predict(newState)[0];
-			target = reward + discount * net.output(newState).getFloat(newAction);
-
+			newState = generateState(map);
 		}
-		INDArray targetArr = net.output(state).putScalar(action, target);
-		storeMemory(state, targetArr);
+		
+		memories.store(state, action, reward, newState);
 
-	}
-
-	private void storeMemory(INDArray state, INDArray targetArr) {
-		if (memories < MAX_MEMORIES) {
-			states.putRow(memories, state);
-			outputs.putRow(memories, targetArr);
-			memories++;
-		}
 	}
 
 	private INDArray generateState(TileMap map) {
@@ -183,11 +173,38 @@ public class ReinforcementEntity implements Comparable<ReinforcementEntity> {
 		life = INITIAL_LIFE;
 		fitness = 0;
 		dead = false;
-		if (memories > BATCH_SIZE) {
-			DataSet memory = new DataSet(states.get(NDArrayIndex.interval(0,memories), NDArrayIndex.all()), outputs.get(NDArrayIndex.interval(0,memories), NDArrayIndex.all()));
-			DataSet m = memory.sample(BATCH_SIZE,false);
-				net.fit(m.getFeatures(), m.getLabels());
+		if(lives > 0)learn();
+		lives++;
+	}
+
+	private void learn() {
+		INDArray data = null;
+		INDArray labels = null;
+		for(Memory m : memories.batch(BATCH_SIZE)) {
+			float target;
+			
+			INDArray state = m.getState();
+			float reward = m.getReward();
+			INDArray newState = m.getNewState();
+			
+			if(m.died()) {
+				target = reward;
+			}
+			else {
+				int newAction = net.predict(newState)[0];
+				target = reward + discount * net.output(newState).getFloat(newAction);
+			}
+			if(data == null) {
+				data = state.dup();
+				labels = net.output(state).putScalar(m.getAction(), target);
+			}
+			else {
+				data = Nd4j.vstack(data,state);
+				labels = Nd4j.vstack(labels,net.output(state).putScalar(m.getAction(), target));
+			}
+
 		}
+		net.fit(data,labels);
 	}
 
 	public void setPosition(Vector2i position) {
